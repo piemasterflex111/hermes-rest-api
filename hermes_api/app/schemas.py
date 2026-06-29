@@ -1,73 +1,90 @@
 """
-Pydantic models for the Hermes REST API.
+Hermes REST API — Data models (Pydantic schemas for request/response).
 
-These define the shape of every request and response in our API.
-This is the contract between client and server — what data each
-endpoint accepts and returns.
-
-Engineering principle: Define your API contract BEFORE you implement
-the endpoints. This forces you to think about what clients actually
-need.
+These enforce the API contract. Every endpoint accepts and returns
+well-defined types — no ad-hoc dicts leaking through.
 """
 
-from pydantic import BaseModel, Field
-from typing import Optional
+from __future__ import annotations
+
+import uuid
 from datetime import datetime
+from enum import Enum
+from typing import Optional
+
+from pydantic import BaseModel, Field, ConfigDict
 
 
-class SessionCreate(BaseModel):
-    """Request to create a new agent session."""
-    model: Optional[str] = None
-    base_url: Optional[str] = None
-    max_turns: int = Field(default=10, ge=1, le=50)
-    enabled_toolsets: Optional[list[str]] = None
-    disabled_toolsets: Optional[list[str]] = None
-    save_trajectories: bool = False
-    verbose: bool = False
+class MessageRole(str, Enum):
+    USER = "user"
+    ASSISTANT = "assistant"
+    SYSTEM = "system"
 
 
-class SessionInfo(BaseModel):
-    """Response with session details."""
-    session_id: str
-    model: Optional[str]
-    base_url: Optional[str]
-    max_turns: int
-    enabled_toolsets: Optional[list[str]]
-    disabled_toolsets: Optional[list[str]]
-    save_trajectories: bool
-    verbose: bool
-    created_at: str
-    message_count: int = 0
-    is_active: bool = True
-
-
-class MessageRequest(BaseModel):
-    """Request to send a message to a session."""
-    message: str
+class MessageCreate(BaseModel):
+    """Request body for sending a message to a session."""
+    content: str = Field(..., min_length=1, max_length=64000)
+    role: Optional[MessageRole] = MessageRole.USER
 
 
 class MessageResponse(BaseModel):
-    """Response from agent after processing a message."""
-    response: str
-    api_calls: int = 0
-    completed: bool = True
-    duration_seconds: float = 0.0
+    """A single message in the conversation history."""
+    id: str
+    session_id: str
+    role: MessageRole
+    content: str
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
 
 
-class SSEEvent(BaseModel):
-    """Single SSE event during streaming."""
-    event_type: str  # "token", "tool_call", "tool_result", "error", "done"
-    data: dict
+class SessionResponse(BaseModel):
+    """Session metadata returned by the API."""
+    id: str
+    title: Optional[str]
+    message_count: int
+    created_at: datetime
+    updated_at: datetime
+    continuity_score: Optional[float] = None
+    matched_session_id: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class SessionCreate(BaseModel):
+    """Request body for creating a new session."""
+    title: Optional[str] = None
+
+
+class SessionListResponse(BaseModel):
+    """Paginated list of sessions."""
+    sessions: list[SessionResponse]
+    total: int
+
+
+class ContinuityCheck(BaseModel):
+    """
+    Response from the continuity engine — compares a new session against
+    prior conversations to detect repeated topics.
+    """
+    is_repeat: bool
+    confidence: float
+    matched_session_id: Optional[str] = None
+    matched_session_title: Optional[str] = None
+    prior_decisions: list[str] = []
+    matched_entities: list[str] = []
 
 
 class HealthResponse(BaseModel):
-    """Health check response."""
+    """Health check endpoint response."""
     status: str
     version: str
-    agent_available: bool
+    governor_reachable: bool
+    timestamp: datetime
 
 
-class ErrorResponse(BaseModel):
-    """Error response shape."""
+class ErrorDetail(BaseModel):
+    """Standardized error response."""
     error: str
     detail: Optional[str] = None
+    request_id: str = Field(default_factory=lambda: str(uuid.uuid4())[:8])
