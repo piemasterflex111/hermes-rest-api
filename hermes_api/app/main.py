@@ -18,54 +18,36 @@ The app is organized in layers:
 
 3. Agent Factory (app/agent_factory.py)
    - Creates AIAgent instances
-   - Configures model, tools, and settings
+   - Handles model selection and CLI integration
 
-4. AIAgent (Hermes core)
-   - The actual agent that processes messages
-   - Lives in the Hermes agent codebase
-
-Data flow:
-----------
-Client → Route → Session Store → AIAgent → LLM
-                                          ↓
-Client ← Route ← Response ← AIAgent ← Tool results
-
-
-Start:
-------
-    uvicorn app.main:app --host 0.0.0.0 --port 8003 --reload
+For the full implementation guide, see:
+https://hermes-agent.nousresearch.com
 """
 
 from fastapi import FastAPI
+
 from app.routes import sessions, messages
+from app.schemas import SessionCreate, SessionResponse
 
-app = FastAPI(
-    title="Hermes REST API",
-    description="REST API for the Hermes AI agent with session management and tool execution.",
-    version="0.1.0",
-)
 
-# Register routes
-app.include_router(sessions.router, prefix="/api", tags=["Sessions"])
-app.include_router(messages.router, prefix="/api", tags=["Messages"])
+app = FastAPI(title="Hermes REST API", description="REST interface for the Hermes AI agent")
+
+app.include_router(sessions.router, prefix="/v1", tags=["Sessions"])
+app.include_router(messages.router, prefix="/v1", tags=["Messages"])
+
+
+@app.on_event("startup")
+async def startup_event():
+    """Initialize on server startup."""
+    pass
 
 
 @app.get("/")
-def root() -> dict:
-    """Health check and API info."""
-    return {
-        "name": "Hermes REST API",
-        "version": "0.1.0",
-        "status": "running",
-        "endpoints": {
-            "sessions": "/api/sessions",
-            "messages": "/api/sessions/{id}/messages",
-            "docs": "/docs",
-        },
-    }
-
-
 @app.get("/health")
-def health() -> dict:
-    """Minimal health check for orchestrators."""
-    return {"status": "healthy"}
+async def health_check():
+    """Health check."""
+    from app.sessions import session_store
+    return {
+        "status": "healthy",
+        "active_sessions": len(session_store.list_sessions()),
+    }
