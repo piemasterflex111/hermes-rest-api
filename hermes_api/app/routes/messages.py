@@ -1,5 +1,6 @@
 """Message routes for session interactions."""
 
+import uuid
 from fastapi import APIRouter, HTTPException
 from app.schemas import MessageCreate, MessageResponse
 from app.sessions import session_store
@@ -22,7 +23,7 @@ async def send_message(session_id: str, req: MessageCreate):
 
     return MessageResponse(
         session_id=session_id,
-        message_id=str(uuid4()),
+        message_id=str(uuid.uuid4()),
         reply=response,
         message_count=session["message_count"],
     )
